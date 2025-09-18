@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Shreyaa's Chat App 🔐</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <h1>Welcome, {{ session['username'] }} 👋</h1>
+    <h3>You are chatting securely 🚀</h3>
+
+    <div id="chat-box">
+        <!-- Messages will appear here -->
+    </div>
+
+    <input type="text" id="message" placeholder="Type your message...">
+    <button onclick="sendMessage()" class="btn-send">Send</button>
+<a href="{{ url_for('logout') }}">
+    <button class="btn-logout">Logout</button>
+</a>
+
+
+
+    <!-- Socket.IO client -->
+    <script src="https://cdn.socket.io/4.5.1/socket.io.min.js"></script>
+    <!-- CryptoJS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+
+    <script>
+        // Connect to server
+        var socket = io();
+
+        // key & iv injected from Flask
+        var encryptionKey = CryptoJS.enc.Utf8.parse("{{ key }}");
+        var iv = CryptoJS.enc.Utf8.parse("{{ iv }}");
+
+        // Send message
+        function sendMessage() {
+            var msg = document.getElementById('message').value;
+            if (msg.trim() !== "") {
+                socket.send(msg); // server will encrypt + broadcast
+                document.getElementById('message').value = "";
+            }
+        }
+
+        // Receive + decrypt message
+        socket.on('message', function(encryptedMsg) {
+            try {
+                var ciphertext = CryptoJS.enc.Base64.parse(encryptedMsg);
+                var decrypted = CryptoJS.AES.decrypt(
+                    { ciphertext: ciphertext },
+                    encryptionKey,
+                    { iv: iv, mode: CryptoJS.mode.CBC, padding: CryptoJS.pad.Pkcs7 }
+                );
+                var decryptedMsg = decrypted.toString(CryptoJS.enc.Utf8);
+
+                // Add to chat
+                var chatBox = document.getElementById('chat-box');
+                chatBox.innerHTML += "<p>" + decryptedMsg + "</p>";
+                chatBox.scrollTop = chatBox.scrollHeight;
+            } catch (e) {
+                console.log("Failed to decrypt:", e, encryptedMsg);
+            }
+        });
+        chatBox.innerHTML += `<p class="message other">${decryptedMsg}</p>`;
+
+    </script>
+</body>
+</html>

@@ -1,0 +1,97 @@
+from flask import Flask, render_template, request, redirect, url_for, session
+from flask_socketio import SocketIO, send
+from flask_pymongo import PyMongo
+from werkzeug.security import generate_password_hash, check_password_hash
+from datetime import timedelta
+from Crypto.Cipher import AES
+from Crypto.Util.Padding import pad
+import base64
+
+# --- App setup ---
+app = Flask(__name__)
+app.config['SECRET_KEY'] = 'secret!'  # for Flask sessions
+app.config['MONGO_URI'] = "mongodb://localhost:27017/chat_app"  # local DB
+app.permanent_session_lifetime = timedelta(minutes=30)
+
+# --- Init DB + SocketIO ---
+mongo = PyMongo(app)
+socketio = SocketIO(app, cors_allowed_origins="*")
+
+# --- AES encryption setup ---
+key = b'ThisIsASecretKey'    # 16 bytes
+iv = b'ThisIsAnInitVect'    # 16 bytes
+
+def encrypt_message(message):
+    cipher = AES.new(key, AES.MODE_CBC, iv)
+    ciphertext = cipher.encrypt(pad(message.encode(), AES.block_size))
+    return base64.b64encode(ciphertext).decode()
+
+
+# ----------------- ROUTES -----------------
+
+@app.route('/')
+def home():
+    if "username" in session:
+        return render_template('index.html', key=key.decode(), iv=iv.decode())
+    return redirect(url_for('login'))
+
+
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+
+        # Check if user exists
+        existing_user = mongo.db.users.find_one({"username": username})
+        if existing_user:
+            return "Username already exists! Try another."
+
+        # Hash password and save
+        hash_pass = generate_password_hash(password)
+        mongo.db.users.insert_one({"username": username, "password": hash_pass})
+
+        return redirect(url_for('login'))
+
+    return render_template('register.html')
+
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+
+        user = mongo.db.users.find_one({"username": username})
+        if user and check_password_hash(user['password'], password):
+            session['username'] = username
+            return redirect(url_for('home'))  # go to chat
+        return "Invalid credentials!"
+
+    return render_template('login.html')
+
+
+@app.route('/logout')
+def logout():
+    session.pop('username', None)
+    return redirect(url_for('login'))
+
+
+# ----------------- SOCKET.IO -----------------
+
+@socketio.on('message')
+def handle_message(msg):
+    if "username" not in session:
+        return  # ignore if not logged in
+
+    print(f"Received from {session['username']}: {msg}")  
+
+    # Encrypt before sending out
+    encrypted = encrypt_message(f"{session['username']}: {msg}")
+    send(encrypted, broadcast=True)
+
+
+# ----------------- MAIN -----------------
+
+if __name__ == '__main__':
+    socketio.run(app, host='0.0.0.0', port=5000, debug=True)
