@@ -1,8 +1,7 @@
 from flask import Flask, render_template, request, redirect, url_for, session
 from flask_socketio import SocketIO, send
-from flask_pymongo import PyMongo
+from pymongo import MongoClient
 from werkzeug.security import generate_password_hash, check_password_hash
-from datetime import timedelta
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad
 import base64
@@ -10,11 +9,13 @@ import base64
 # --- App setup ---
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'secret!'  # for Flask sessions
-app.config['MONGO_URI'] = "mongodb://localhost:27017/chat_app"  # local DB
-app.permanent_session_lifetime = timedelta(minutes=30)
 
-# --- Init DB + SocketIO ---
-mongo = PyMongo(app)
+# --- MongoDB Atlas connection ---
+client = MongoClient("mongodb+srv://shreyashedge07_db_user:fjMKld8lhqSBnc3F@cluster0.181l3dr.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0")
+db = client["chat_app_db"]  # database
+users_collection = db["users"]  # collection for users
+
+# --- Init SocketIO ---
 socketio = SocketIO(app, cors_allowed_origins="*")
 
 # --- AES encryption setup ---
@@ -43,13 +44,13 @@ def register():
         password = request.form['password']
 
         # Check if user exists
-        existing_user = mongo.db.users.find_one({"username": username})
+        existing_user = users_collection.find_one({"username": username})
         if existing_user:
             return "Username already exists! Try another."
 
         # Hash password and save
         hash_pass = generate_password_hash(password)
-        mongo.db.users.insert_one({"username": username, "password": hash_pass})
+        users_collection.insert_one({"username": username, "password": hash_pass})
 
         return redirect(url_for('login'))
 
@@ -62,7 +63,7 @@ def login():
         username = request.form['username']
         password = request.form['password']
 
-        user = mongo.db.users.find_one({"username": username})
+        user = users_collection.find_one({"username": username})
         if user and check_password_hash(user['password'], password):
             session['username'] = username
             return redirect(url_for('home'))  # go to chat
