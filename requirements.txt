@@ -5,3 +5,4 @@ flask-pymongo
 werkzeug
 cryptography
 gunicorn
+pycryptodome
