@@ -1,8 +1,7 @@
 flask
 flask-socketio
 eventlet
-flask-pymongo
+pymongo
 werkzeug
-cryptography
 gunicorn
 pycryptodome
